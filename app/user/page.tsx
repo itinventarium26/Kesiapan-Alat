@@ -127,6 +127,15 @@ export default function UserDashboard() {
           </table>
         </div>
       </div>
+      {/* FOOTER HAK CIPTA */}
+      <footer className="mt-12 py-6 border-t border-slate-300/30 dark:border-white/10 text-center w-full">
+        <p className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300">
+          Copyright &copy; Jonathan Parera, Jonathan Ruben, Melsanda Kabalu
+        </p>
+        <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 mt-1">
+          Teknik Informatika - Politeknik Negeri Manado
+        </p>
+      </footer>
     </div>
   );
 }
