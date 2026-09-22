@@ -23,11 +23,18 @@ export default function AdminDashboard() {
   
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
+  // State form Teknisi
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [nama, setNama] = useState('');
   const [loadingUser, setLoadingUser] = useState(false);
 
+  // --- STATE CUSTOM POP-UP UBAH SANDI ---
+  const [passwordModal, setPasswordModal] = useState({ isOpen: false, uid: '', namaLengkap: '' });
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
+
+  // State form Alat
   const [kodeAlat, setKodeAlat] = useState('');
   const [namaAlat, setNamaAlat] = useState('');
   const [statusAlat, setStatusAlat] = useState('siap');
@@ -44,39 +51,27 @@ export default function AdminDashboard() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // --- EFEK PERTAMA KALI MUAT & REAL-TIME LISTENER ---
   useEffect(() => {
-    fetchData(); // Tarik data pertama kali
+    fetchData(); 
 
-    // Berlangganan (Subscribe) ke perubahan Database secara Real-Time
     const realtimeChannel = supabase
       .channel('admin-realtime')
-      // Jika ada perubahan di tabel Alat
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipments' }, () => {
-        fetchData(); 
-      })
-      // Jika ada perubahan di tabel Riwayat (Catatan Teknisi)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipment_logs' }, () => {
-        fetchData(); 
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipments' }, () => { fetchData(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipment_logs' }, () => { fetchData(); })
       .subscribe();
 
-    // Membersihkan memori langganan saat Admin menutup halaman
     return () => {
       supabase.removeChannel(realtimeChannel);
     };
   }, []);
 
   const fetchData = async () => {
-    // 1. Tarik Data Alat
     const { data: alatData } = await supabase.from('equipments').select('*').order('created_at', { ascending: false });
     if (alatData) setEquipments(alatData);
     
-    // 2. Tarik Data Teknisi
     const { data: profilesData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     if (profilesData) setUsersList(profilesData);
 
-    // 3. Tarik Data Riwayat Log
     const { data: logData } = await supabase.from('equipment_logs').select('*, equipments(kode_alat, nama_alat)').order('created_at', { ascending: false });
     if (logData) setLogsList(logData);
     
@@ -146,17 +141,36 @@ export default function AdminDashboard() {
     setLoadingUser(false);
   };
 
-  const handleUpdatePassword = async (uid: string, namaLengkap: string) => {
-    const newPassword = prompt(`Masukkan sandi baru (min 6 karakter) untuk akun ${namaLengkap}:`);
-    if (!newPassword || newPassword.length < 6) return showToast("Batal: Sandi kurang dari 6 karakter.", "error");
-    const response = await fetch('/api/users', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid, newPassword }) });
-    if (response.ok) showToast(`Sandi akun ${namaLengkap} berhasil diubah!`, "success"); else showToast('Gagal mengubah sandi.', "error");
-  };
-
   const handleDeleteUser = async (uid: string, namaLengkap: string) => {
     if (!confirm(`Yakin ingin MENGHAPUS akun ${namaLengkap}?`)) return;
     const response = await fetch('/api/users', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid }) });
     if (response.ok) { showToast(`Akun ${namaLengkap} dihapus.`, "success"); fetchData(); } else showToast('Gagal menghapus akun.', "error");
+  };
+
+  // --- FUNGSI POP-UP UBAH SANDI ---
+  const openPasswordModal = (uid: string, namaLengkap: string) => {
+    setPasswordModal({ isOpen: true, uid, namaLengkap });
+    setNewPasswordInput('');
+  };
+
+  const submitNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPasswordInput.length < 6) return showToast("Sandi minimal 6 karakter.", "error");
+    
+    setIsSubmittingPassword(true);
+    const response = await fetch('/api/users', { 
+      method: 'PUT', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ uid: passwordModal.uid, newPassword: newPasswordInput }) 
+    });
+    
+    if (response.ok) {
+      showToast(`Sandi akun ${passwordModal.namaLengkap} berhasil diubah!`, "success");
+      setPasswordModal({ isOpen: false, uid: '', namaLengkap: '' });
+    } else {
+      showToast('Gagal mengubah sandi.', "error");
+    }
+    setIsSubmittingPassword(false);
   };
 
   const teknisiList = usersList.filter(u => u.role === 'user');
@@ -164,8 +178,48 @@ export default function AdminDashboard() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 md:py-12 w-full relative min-h-screen flex flex-col">
       
+      {/* OVERLAY CUSTOM MODAL UBAH SANDI */}
+      {passwordModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm transition-all">
+          <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-700 transform transition-all scale-100 opacity-100">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Ubah Sandi Teknisi</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+              Masukkan kata sandi baru untuk akun <strong>{passwordModal.namaLengkap}</strong>.
+            </p>
+            <form onSubmit={submitNewPassword}>
+              <input 
+                type="password" 
+                required 
+                minLength={6} 
+                value={newPasswordInput} 
+                onChange={(e) => setNewPasswordInput(e.target.value)} 
+                className="w-full px-4 py-3 mb-6 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500" 
+                placeholder="Ketik sandi baru..." 
+              />
+              <div className="flex justify-end gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setPasswordModal({ isOpen: false, uid: '', namaLengkap: '' })} 
+                  className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingPassword} 
+                  className={`px-4 py-2 rounded-lg font-bold text-white transition-all ${isSubmittingPassword ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-500 shadow-md'}`}
+                >
+                  {isSubmittingPassword ? 'Menyimpan...' : 'Simpan Sandi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* KONTEN UTAMA */}
       <div className="flex-1">
+        {/* Toast Notifikasi Kustom */}
         {toast && (
           <div className={`fixed top-5 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-50 px-6 py-4 rounded-lg shadow-2xl border flex items-center gap-3 font-semibold transition-all duration-300 animate-bounce ${
             toast.type === 'success' ? 'bg-green-100 border-green-500 text-green-800' : 'bg-red-100 border-red-500 text-red-800'
@@ -245,7 +299,11 @@ export default function AdminDashboard() {
                     <tr key={user.id} className="hover:bg-slate-100/50 dark:hover:bg-white/5 transition-colors">
                       <td className="p-3 md:p-4 font-bold text-slate-900 dark:text-white">{user.nama_lengkap}</td>
                       <td className="p-3 md:p-4"><span className="uppercase text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30">{user.role}</span></td>
-                      <td className="p-3 md:p-4 text-right space-x-3"><button onClick={() => handleUpdatePassword(user.id, user.nama_lengkap)} className="text-yellow-600 dark:text-yellow-400 hover:underline font-semibold">Ubah Sandi</button><button onClick={() => handleDeleteUser(user.id, user.nama_lengkap)} className="text-red-600 dark:text-red-400 hover:underline font-semibold">Hapus Akun</button></td>
+                      <td className="p-3 md:p-4 text-right space-x-3">
+                        {/* Tombol memanggil Custom Pop-Up */}
+                        <button onClick={() => openPasswordModal(user.id, user.nama_lengkap)} className="text-yellow-600 dark:text-yellow-400 hover:underline font-semibold">Ubah Sandi</button>
+                        <button onClick={() => handleDeleteUser(user.id, user.nama_lengkap)} className="text-red-600 dark:text-red-400 hover:underline font-semibold">Hapus Akun</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -301,7 +359,6 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* FOOTER HAK CIPTA */}
       <footer className="mt-12 py-6 border-t border-slate-300/30 dark:border-white/10 text-center w-full">
         <p className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300">
           Copyright &copy; Jonathan Parera, Jonathan Ruben, Melsanda Kabalu
